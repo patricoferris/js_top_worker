@@ -94,6 +94,93 @@ module Server = Toplevel_api_gen.Make (IdlM.GenServer ())
 
 let buff_opt b = match Buffer.contents b with "" -> None | s -> Some s
 
+(* Functions borrowed from js_of_ocaml, see copyright at the bottom of the file. *)
+let loc = function
+  | Syntaxerr.Error x -> Some (Syntaxerr.location_of_error x)
+  | Lexer.Error (_, loc)
+  | Typecore.Error (loc, _, _)
+  | Typetexp.Error (loc, _, _)
+  | Typeclass.Error (loc, _, _)
+  | Typemod.Error (loc, _, _)
+  | Typedecl.Error (loc, _)
+  | Translcore.Error (loc, _)
+  | Translclass.Error (loc, _)
+  | Translmod.Error (loc, _) ->
+      Some loc
+  | _ -> None
+
+let refill_lexbuf s p ppf buffer len =
+  if !p = String.length s then 0
+  else
+    let len', nl =
+      try (String.index_from s !p '\n' - !p + 1, false)
+      with _ -> (String.length s - !p, true)
+    in
+    let len'' = min len len' in
+    String.blit s !p buffer 0 len'';
+    (match ppf with
+    | Some ppf ->
+        Format.fprintf ppf "%s" (Bytes.sub_string buffer 0 len'');
+        if nl then Format.pp_print_newline ppf ();
+        Format.pp_print_flush ppf ()
+    | None -> ());
+    p := !p + len'';
+    len''
+
+let typecheck_phrase :
+    string ->
+    (Toplevel_api_gen.exec_result, Toplevel_api_gen.err) IdlM.T.resultb =
+  let res_buff = Buffer.create 100 in
+  let pp_result = Format.formatter_of_buffer res_buff in
+  let highlighted = ref None in
+  let highlight_location loc =
+    let _file1, line1, col1 = Location.get_pos_info loc.Location.loc_start in
+    let _file2, line2, col2 = Location.get_pos_info loc.Location.loc_end in
+    highlighted := Some Toplevel_api_gen.{ line1; col1; line2; col2 }
+  in
+  fun phr ->
+    Buffer.clear res_buff;
+    Buffer.clear stderr_buff;
+    Buffer.clear stdout_buff;
+    try
+      let lb = Lexing.from_function (refill_lexbuf phr (ref 0) None) in
+      let phr = !Toploop.parse_toplevel_phrase lb in
+      let phr = Toploop.preprocess_phrase pp_result phr in
+      match phr with
+      | Parsetree.Ptop_def sstr ->
+          let oldenv = !Topcommon.toplevel_env in
+          Typecore.reset_delayed_checks ();
+          let str, sg, sn, newenv = Typemod.type_toplevel_phrase oldenv sstr in
+          let sg' = Typemod.Signature_names.simplify newenv sn sg in
+          ignore (Includemod.signatures ~mark:Mark_positive oldenv sg sg');
+          Typecore.force_delayed_checks ();
+          Printtyped.implementation pp_result str;
+          Format.pp_print_flush pp_result ();
+          Warnings.check_fatal ();
+          flush_all ();
+          IdlM.ErrM.return
+            Toplevel_api_gen.
+              {
+                stdout = buff_opt stdout_buff;
+                stderr = buff_opt stderr_buff;
+                sharp_ppf = None;
+                caml_ppf = buff_opt res_buff;
+                highlight = !highlighted;
+              }
+      | _ -> failwith "Typechecking"
+    with x ->
+      (match loc x with None -> () | Some loc -> highlight_location loc);
+      Errors.report_error Format.err_formatter x;
+      IdlM.ErrM.return
+        Toplevel_api_gen.
+          {
+            stdout = buff_opt stdout_buff;
+            stderr = buff_opt stderr_buff;
+            sharp_ppf = None;
+            caml_ppf = buff_opt res_buff;
+            highlight = !highlighted;
+          }
+
 let execute =
   let code_buff = Buffer.create 100 in
   let res_buff = Buffer.create 100 in
@@ -272,6 +359,7 @@ let run () =
        fun s -> Js_of_ocaml.(Firebug.console##log s));
     Server.complete complete;
     Server.exec execute;
+    Server.typecheck typecheck_phrase;
     Server.setup setup;
     Server.init init;
     let rpc_fn = IdlM.server Server.implementation in

@@ -45,6 +45,10 @@ module W : sig
       printed when starting a toplevel. Note that the toplevel
       must be initialised first. *)
 
+  val typecheck : rpc -> string -> (exec_result, err) result Lwt.t
+  (** Typecheck a phrase using the toplevel. The toplevel must have been
+        Initialised first. *)
+
   val exec : rpc -> string -> (exec_result, err) result Lwt.t
   (** Execute a phrase using the toplevel. The toplevel must have been
       Initialised first. *)

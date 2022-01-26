@@ -528,6 +528,11 @@ module Make(R:RPC) =
         "printed when starting a toplevel. Note that the toplevel";
         "must be initialised first."]
         (unit_p @-> (returning exec_result_p err))
+    let typecheck =
+      declare
+        "typecheck"
+        [ "Typecheck a phrase without actually executing it." ]
+        (phrase_p @-> returning exec_result_p err)
     let exec =
       declare "exec"
         ["Execute a phrase using the toplevel. The toplevel must have been";
