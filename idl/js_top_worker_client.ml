@@ -61,6 +61,11 @@ module Rpc_lwt = Idl.Make (Lwt)
 module Wraw = Toplevel_api_gen.Make (Rpc_lwt.GenClient ())
 
 module W : sig
+  type init_libs = Toplevel_api_gen.init_libs
+  type err = Toplevel_api_gen.err
+  type exec_result = Toplevel_api_gen.exec_result
+  type completion_result = Toplevel_api_gen.completion_result
+
   val init :
     rpc ->
     Toplevel_api_gen.init_libs ->
@@ -81,7 +86,25 @@ module W : sig
     string ->
     (Toplevel_api_gen.completion_result, Toplevel_api_gen.err) result Lwt.t
 end = struct
-  let init rpc a = Wraw.init rpc a |> Rpc_lwt.T.get
+  type init_libs = Toplevel_api_gen.init_libs
+  type err = Toplevel_api_gen.err
+  type exec_result = Toplevel_api_gen.exec_result
+  type completion_result = Toplevel_api_gen.completion_result
+
+  let pp_state = function
+    | Lwt.Return _ -> Printf.printf "Return"
+    | Sleep _ -> Printf.printf "Sleep"
+    | Fail exn -> Printf.printf "EXN:%s" (Printexc.to_string exn)
+
+  let init rpc a = 
+    let open Lwt.Syntax in 
+    let t = Wraw.init rpc a in
+    Printf.printf "Hello World";
+    let r = t |> Rpc_lwt.T.get in
+    pp_state (Lwt.state r);
+    let* r = r in
+    Lwt.return r
+
   let setup rpc a = Wraw.setup rpc a |> Rpc_lwt.T.get
   let exec rpc a = Wraw.exec rpc a |> Rpc_lwt.T.get
   let complete rpc a = Wraw.complete rpc a |> Rpc_lwt.T.get

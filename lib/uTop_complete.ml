@@ -692,7 +692,7 @@ let global_fields () = get_cached global_fields list_global_fields
    +-----------------------------------------------------------------+ *)
 
 let rec find_method meth type_expr =
-  match type_expr.desc with
+  match get_desc type_expr with
     | Tlink type_expr ->
         find_method meth type_expr
     | Tobject (type_expr, _) ->
@@ -716,7 +716,7 @@ let rec find_method meth type_expr =
         None
 
 let rec methods_of_type acc type_expr =
-  match type_expr.desc with
+  match get_desc type_expr with
     | Tlink type_expr ->
         methods_of_type acc type_expr
     | Tobject (type_expr, _) ->
@@ -770,7 +770,7 @@ let methods_of_object longident meths =
    +-----------------------------------------------------------------+ *)
 
 let rec labels_of_type acc type_expr =
-  match type_expr.desc with
+  match get_desc type_expr with
     | Tlink te ->
         labels_of_type acc te
     | Tpoly (te, _) ->
