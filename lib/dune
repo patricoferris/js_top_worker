@@ -15,6 +15,7 @@
   js_top_worker_rpc
   js_of_ocaml-toplevel
   js_of_ocaml-compiler
+  compiler-libs.common
   astring)
  (preprocess
   (per_module

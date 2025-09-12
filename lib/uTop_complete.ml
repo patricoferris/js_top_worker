@@ -374,7 +374,7 @@ let visible_modules () =
           with Sys_error _ ->
             acc)
 #if OCAML_VERSION >= (4, 08, 0)
-        String_set.empty @@ Load_path.get_paths ()
+        String_set.empty @@ (Load_path.get_paths ()).visible
 #else
         String_set.empty !Config.load_path
 #endif
@@ -386,14 +386,14 @@ let constructor_name { cd_id = id } = Ident.name id
 let add_fields_of_type decl acc =
   match decl.type_kind with
 #if OCAML_VERSION >= (4, 13, 0)
-    | Type_variant (constructors,_) ->
+    | Type_variant (constructors,_,_) ->
 #else
     | Type_variant constructors ->
 #endif
         acc
-    | Type_record (fields, _) ->
+    | Type_record (fields, _,_) ->
         List.fold_left (fun acc field -> add (field_name field) acc) acc fields
-    | Type_abstract ->
+    | Type_abstract _ ->
         acc
     | Type_open ->
         acc
@@ -401,14 +401,14 @@ let add_fields_of_type decl acc =
 let add_names_of_type decl acc =
   match decl.type_kind with
 #if OCAML_VERSION >= (4, 13, 0)
-    | Type_variant (constructors,_) ->
+    | Type_variant (constructors,_,_) ->
 #else
     | Type_variant constructors ->
 #endif
         List.fold_left (fun acc cstr -> add (constructor_name cstr) acc) acc constructors
-    | Type_record (fields, _) ->
+    | Type_record (fields, _,_) ->
         List.fold_left (fun acc field -> add (field_name field) acc) acc fields
-    | Type_abstract ->
+    | Type_abstract _ ->
         acc
     | Type_open ->
         acc
@@ -548,7 +548,7 @@ let list_global_names () =
     | Env.Env_value_unbound _-> acc
     | Env.Env_module_unbound _-> acc
 #endif
-    | Env.Env_value(summary, id, _) ->
+    | Env.Env_value(summary, id, _, _) ->
         loop (add (Ident.name id) acc) summary
     | Env.Env_type(summary, id, decl) ->
         loop (add_names_of_type decl (add (Ident.name id) acc)) summary
@@ -623,7 +623,7 @@ let list_global_fields () =
     | Env.Env_value_unbound _-> acc
     | Env.Env_module_unbound _-> acc
 #endif
-    | Env.Env_value(summary, id, _) ->
+    | Env.Env_value(summary, id, _, _) ->
         loop (add (Ident.name id) acc) summary
     | Env.Env_type(summary, id, decl) ->
         loop (add_fields_of_type decl (add (Ident.name id) acc)) summary
@@ -775,7 +775,7 @@ let rec labels_of_type acc type_expr =
         labels_of_type acc te
     | Tpoly (te, _) ->
         labels_of_type acc te
-    | Tarrow(label, _, te, _) ->
+    | Tarrow((label, _, _), _, te, _) ->
 #if OCAML_VERSION < (4, 03, 0)
         if label = "" then
           labels_of_type acc te
@@ -945,7 +945,7 @@ let complete ~phrase_terminator ~input =
               String_map.empty
               (Filename.current_dir_name ::
 #if OCAML_VERSION >= (4, 08, 0)
-                (Load_path.get_paths ())
+                (Load_path.get_paths ()).visible
 #else
                 !Config.load_path
 #endif
@@ -980,7 +980,7 @@ let complete ~phrase_terminator ~input =
               String_map.empty
               (Filename.current_dir_name ::
 #if OCAML_VERSION >= (4, 08, 0)
-                (Load_path.get_paths ())
+                (Load_path.get_paths ()).visible
 #else
                 !Config.load_path
 #endif

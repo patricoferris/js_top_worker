@@ -55,24 +55,32 @@ let exec' s =
   if not res then Format.eprintf "error while evaluating %s@." s
 
 let setup functions () =
+  let open Js_of_ocaml in
   JsooTop.initialize ();
+  Firebug.console##log (Js.string "INIT");
   List.iter (fun f -> f ()) functions;
+  Firebug.console##log (Js.string "Func");
   Sys.interactive := false;
+  exec' "1 + 1;;";
   if Version.compare Version.current [ 4; 07 ] >= 0 then exec' "open Stdlib";
+  Firebug.console##log (Js.string "Open STDLIB");
   let header1 = Printf.sprintf "        %s version %%s" "OCaml" in
   let header2 =
     Printf.sprintf "     Compiled with Js_of_ocaml version %s"
       Js_of_ocaml.Sys_js.js_of_ocaml_version
   in
+  Firebug.console##log (Js.string "headers");
   exec' (Printf.sprintf "Format.printf \"%s@.\" Sys.ocaml_version;;" header1);
   exec' (Printf.sprintf "Format.printf \"%s@.\";;" header2);
   exec' "#enable \"pretty\";;";
   exec' "#disable \"shortvar\";;";
+  Firebug.console##log (Js.string "Few more execs");
   Toploop.add_directive "load_js"
     (Toploop.Directive_string
        (fun name -> Js_of_ocaml.Js.Unsafe.global##load_script_ name))
     Toploop.{ section = ""; doc = "Load a javascript script" };
   Sys.interactive := true;
+  Firebug.console##log (Js.string "Setup complete");
   ()
 
 let setup_printers () =
@@ -141,46 +149,16 @@ let sync_get url =
         (fun b -> Some (Typed_array.String.of_arrayBuffer b))
   | _ -> None
 
-type signature = Types.signature_item list
-type flags = Cmi_format.pers_flags list
-type header = string * signature
-type crcs = (string * Digest.t option) list 
-
-(** The following two functions are taken from cmi_format.ml in
-    the compiler, but changed to work on bytes rather than input
-    channels *)
-let input_cmi str =
-  let offset = 0 in
-  let (name, sign) = (Marshal.from_bytes str offset : header) in
-  let offset = offset + Marshal.total_size str offset in
-  let crcs = (Marshal.from_bytes str offset : crcs) in
-  let offset = offset + Marshal.total_size str offset in
-  let flags = (Marshal.from_bytes str offset : flags) in
-  {
-    Cmi_format.cmi_name = name;
-    cmi_sign = sign;
-    cmi_crcs = crcs;
-    cmi_flags = flags;
-  }
-
-let read_cmi filename str =
-  let magic_len = String.length Config.cmi_magic_number in
-  let buffer = Bytes.sub str 0 magic_len in
-  (if buffer <> Bytes.of_string Config.cmi_magic_number then
-   let pre_len = String.length Config.cmi_magic_number - 3 in
-   if
-     Bytes.sub buffer 0 pre_len
-     = Bytes.of_string @@ String.sub Config.cmi_magic_number 0 pre_len
-   then
-     let msg =
-       if buffer < Bytes.of_string Config.cmi_magic_number then "an older"
-       else "a newer"
-     in
-     raise (Cmi_format.Error (Wrong_version_interface (filename, msg)))
-   else raise (Cmi_format.Error (Not_an_interface filename)));
-  input_cmi (Bytes.sub str magic_len (Bytes.length str - magic_len))
 
 let functions : (unit -> unit) list option ref = ref None
+
+let read_cmi filename bytes =
+  let cmi =
+    Out_channel.with_open_bin filename (fun oc -> Out_channel.output_bytes oc bytes);
+    Cmi_format.read_cmi_lazy filename
+  in
+  print_endline "READ CMI";
+  cmi
 
 let init (init_libs : Toplevel_api_gen.init_libs) =
   let open Js_of_ocaml in
@@ -199,10 +177,11 @@ let init (init_libs : Toplevel_api_gen.init_libs) =
 #endif
     let old_loader = !load in
     (load :=
-       fun ~unit_name ->
+       fun ~allow_hidden ~unit_name ->
+         let s_unit_name = Compilation_unit.Name.to_string unit_name in
          let result =
             optbind
-             (try Some (List.assoc (String.uncapitalize_ascii unit_name) cmi_files) with _ -> None)
+             (try Some (List.assoc (String.uncapitalize_ascii s_unit_name) cmi_files) with _ -> None)
              sync_get
          in
          match result with
@@ -211,9 +190,10 @@ let init (init_libs : Toplevel_api_gen.init_libs) =
                {
                  filename =
                    Sys.executable_name;
-                 cmi = read_cmi unit_name (Bytes.of_string x);
+                 visibility = Visible; 
+                 cmi = read_cmi s_unit_name (Bytes.of_string x);
                }
-         | _ -> old_loader ~unit_name);
+         | _ -> old_loader ~allow_hidden ~unit_name);
     Js_of_ocaml.Worker.import_scripts
       (List.map (fun cma -> cma.Toplevel_api_gen.url) init_libs.cmas);
     functions :=
@@ -311,6 +291,8 @@ let refill_lexbuf s p ppf buffer len =
     p := !p + len'';
     len''
 
+let toplevel_sig = ref []
+
 let typecheck_phrase =
   let res_buff = Buffer.create 100 in
   let pp_result = Format.formatter_of_buffer res_buff in
@@ -331,10 +313,12 @@ let typecheck_phrase =
       match phr with
       | Parsetree.Ptop_def sstr ->
         let oldenv = !Toploop.toplevel_env in
+        let oldsig = !toplevel_sig in
         Typecore.reset_delayed_checks ();
 #if OCAML_VERSION >= (4,9,0)
-        let str, sg, sn, _shape, newenv = Typemod.type_toplevel_phrase oldenv sstr in
+        let str, sg, sn, _shape, newenv = Typemod.type_toplevel_phrase oldenv oldsig sstr in
         let sg' = Typemod.Signature_names.simplify newenv sn sg in
+        toplevel_sig := List.rev_append sg' oldsig;
         ignore (Includemod.signatures ~mark:Mark_positive oldenv sg sg');
 #else
         let str, sg, newenv = Typemod.type_toplevel_phrase oldenv sstr in

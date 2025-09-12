@@ -199,9 +199,9 @@ let parse_default parse str eos_is_error =
           Error ([mkloc loc],
                  Printf.sprintf "Error: broken invariant in parsetree: %s" s)
 #if OCAML_VERSION >= (4, 03, 0)
-      | Syntaxerr.Invalid_package_type (loc, s) ->
+      | Syntaxerr.Invalid_package_type (loc, _) ->
           Error ([mkloc loc],
-                 Printf.sprintf "Invalid package type: %s" s)
+                 Printf.sprintf "Invalid package type")
 #endif
     end
     | Syntaxerr.Escape_error | Parsing.Parse_error ->
@@ -262,9 +262,13 @@ let check_phrase phrase =
           let open Ast_helper in
           with_default_loc loc
             (fun () ->
+               let arg : function_param_desc = Pparam_val (nolabel, None, (Pat.construct unit None)) in
+               let param : function_param = { pparam_loc = loc; pparam_desc = arg } in
+               let global : modes = [ { txt = Mode "global"; loc } ] in 
+               let const : function_constraint = { mode_annotations = global; ret_mode_annotations = global; ret_type_constraint = None } in
                Str.eval
-                 (Exp.fun_ nolabel None (Pat.construct unit None)
-                   (Exp.letmodule (with_loc loc
+                 (Exp.function_ [ param ] const
+                   (Pfunction_body (Exp.letmodule (with_loc loc
                         #if OCAML_VERSION >= (4, 10, 0)
                         (Some "_")
                         #else
@@ -272,7 +276,7 @@ let check_phrase phrase =
                         #endif
                         )
                       (Mod.structure (item :: items))
-                      (Exp.construct unit None))))
+                      (Exp.construct unit None)))))
         in
         let check_phrase = Ptop_def [top_def] in
         try
@@ -330,8 +334,8 @@ let () =
    +-----------------------------------------------------------------+ *)
 
 #if OCAML_VERSION >= (4, 08, 0)
-let get_load_path ()= Load_path.get_paths ()
-let set_load_path path= Load_path.init ~auto_include:Load_path.no_auto_include path
+let get_load_path ()= (Load_path.get_paths ()).visible
+let set_load_path path= Load_path.init ~auto_include:Load_path.no_auto_include ~hidden:[] ~visible:path
 #else
 let get_load_path ()= !Config.load_path
 let set_load_path path= Config.load_path := path
