@@ -31,15 +31,10 @@ let get_desc x =
 #endif
 
 (* Transform a non-empty list of strings into a long-identifier. *)
-let longident_of_list = function
-  | [] ->
+let longident_of_list p = match Longident.unflatten p with
+  | None ->
       invalid_arg "UTop_complete.longident_of_list"
-  | component :: rest ->
-      let rec loop acc = function
-        | [] -> acc
-        | component :: rest -> loop (Longident.Ldot(acc, component)) rest
-      in
-      loop (Longident.Lident component) rest
+  | Some x -> x
 
 (* Check whether an identifier is a valid one. *)
 let is_valid_identifier id =
@@ -408,6 +403,9 @@ let add_fields_of_type decl acc =
 #endif
     | Type_open ->
         acc
+#if OCAML_VERSION >= (5, 5, 0)
+    | Type_external _ -> acc
+#endif
 
 let add_names_of_type decl acc =
   match decl.type_kind with
@@ -425,6 +423,9 @@ let add_names_of_type decl acc =
         | Type_abstract ->
 #endif
         acc
+#if OCAML_VERSION >= (5, 5, 0)
+    | Type_external _ -> acc
+#endif
     | Type_open ->
         acc
 
@@ -581,7 +582,11 @@ let list_global_names () =
         loop (add (Ident.name id) acc) summary
     | Env.Env_cltype(summary, id, _) ->
         loop (add (Ident.name id) acc) summary
+#if OCAML_VERSION >= (5, 5, 0)
+    | Env.Env_not_aliasable(summary, id) ->
+#else
     | Env.Env_functor_arg(summary, id) ->
+#endif
         loop (add (Ident.name id) acc) summary
 #if OCAML_VERSION >= (4, 08, 0)
     | Env.Env_persistent (summary, id) ->
@@ -650,7 +655,11 @@ let list_global_fields () =
     | Env.Env_module(summary, id, _) ->
 #endif
         loop (add (Ident.name id) acc) summary
+#if OCAML_VERSION >= (5, 5, 0)
+    | Env.Env_not_aliasable(summary, id) ->
+#else
     | Env.Env_functor_arg(summary, id) ->
+#endif
         loop (add (Ident.name id) acc) summary
     | Env.Env_modtype(summary, id, _) ->
         loop (add (Ident.name id) acc) summary
@@ -937,7 +946,7 @@ let complete ~phrase_terminator ~input =
     | [(Symbol "#", _); (Lident "typeof", _); (String (tlen, false), loc)] ->
       let prefix = String.sub input (loc.ofs1 + tlen) (String.length input - loc.ofs1 - tlen) in
       begin match longident_parse prefix with
-      | Longident.Ldot (lident, last_prefix) ->
+      | Longident.Ldot ({ txt = lident; _ }, { txt = last_prefix; _ }) ->
         let set = names_of_module lident in
         let compls = lookup last_prefix (String_set.elements set) in
         let start = loc.idx1 + 1 + (String.length prefix - String.length last_prefix) in

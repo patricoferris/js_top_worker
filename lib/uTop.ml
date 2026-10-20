@@ -109,9 +109,11 @@ let collect_formatters buf pps f =
     raise exn
 
 let discard_formatters pps f =
+  match pps with [] -> f () | fpp :: pps_rest ->
   (* First flush all formatters. *)
   List.iter (fun pp -> Format.pp_print_flush pp ()) pps;
   (* Save all formatter functions. *)
+  let h = Format.pp_get_formatter_out_functions fpp () in
   let save = List.map (fun pp -> Format.pp_get_formatter_out_functions pp ()) pps in
   let restore () =
     List.iter2
@@ -122,6 +124,7 @@ let discard_formatters pps f =
   in
   (* Output functions. *)
   let out_functions = {
+    h with 
     Format.out_string = (fun _ _ _ -> ()); out_flush = ignore;
     out_newline = ignore; out_spaces = ignore
 #if OCAML_VERSION >= (4, 06, 0)
@@ -280,17 +283,17 @@ let check_phrase phrase =
           let open Ast_helper in
           with_default_loc loc
             (fun () ->
-               Str.eval
-                 (Exp.fun_ Nolabel None (Pat.construct unit None)
-                   (Exp.letmodule (with_loc loc
-                        #if OCAML_VERSION >= (4, 10, 0)
-                        (Some "_")
-                        #else
-                          "_"
-                        #endif
-                        )
+              let punit = (Pat.construct unit None) in
+#if OCAML_VERSION >= (5, 5, 0)
+              let si = Str.module_ ~loc (Mb.mk ~loc (with_loc loc (Some "_")) (Mod.structure (item :: items))) in
+              let body = (Exp.struct_item ~loc si (Exp.construct unit None)) in
+#else
+              let body = (Exp.letmodule ~loc:loc
+                      (with_loc loc (Some "_"))
                       (Mod.structure (item :: items))
-                      (Exp.construct unit None))))
+                      (Exp.construct unit None)) in
+#endif
+              Str.eval (UTop_compat.Exp.fun_ ~loc punit body))
         in
         let check_phrase = Ptop_def [top_def] in
         try
@@ -347,11 +350,6 @@ let () =
    | Compiler-libs re-exports                                        |
    +-----------------------------------------------------------------+ *)
 
-let get_load_path () = Load_path.get_paths ()
+let get_load_path = UTop_compat.get_load_path 
 
-#if OCAML_VERSION >= (5, 0, 0)
-let set_load_path path =
-  Load_path.init path ~auto_include:Load_path.no_auto_include
-#else
-let set_load_path path = Load_path.init path
-#endif
+let set_load_path = UTop_compat.set_load_path

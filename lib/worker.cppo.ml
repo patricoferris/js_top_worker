@@ -344,11 +344,11 @@ let typecheck_phrase =
 #if OCAML_VERSION >= (4,8,0) && OCAML_VERSION < (4,14,0)
         let str, sg, sn, newenv = Typemod.type_toplevel_phrase oldenv sstr in
         let sg' = Typemod.Signature_names.simplify newenv sn sg in
-        ignore (Includemod.signatures ~mark:Mark_positive oldenv sg sg');
+        ignore (Includemod.signatures ~mark:true oldenv sg sg');
 #elif OCAML_VERSION >= (4,14,0)
         let str, sg, sn, _, newenv = Typemod.type_toplevel_phrase oldenv sstr in
         let sg' = Typemod.Signature_names.simplify newenv sn sg in
-        ignore (Includemod.signatures ~mark:Mark_positive oldenv sg sg');
+        ignore (Includemod.signatures ~mark:true oldenv sg sg');
 #else
         let str, sg, newenv = Typemod.type_toplevel_phrase oldenv sstr in
         let sg' = Typemod.simplify_signature sg in
